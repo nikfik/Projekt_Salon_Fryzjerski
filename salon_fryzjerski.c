@@ -1,97 +1,46 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <errno.h>
-#include <string.h>
 #include <sys/types.h>
-#include <sys/ipc.h>
-#include <sys/sem.h>
-#include <sys/shm.h>
+#include <sys/wait.h>
 #include <unistd.h>
-#include <signal.h>
 
+int main() {
+    pid_t pid_fryzjerzy, pid_fotele, pid_klienci;
 
-#define wielkosc_poczekalni 10;
+    pid_fryzjerzy = fork();
+    if (pid_fryzjerzy == 0) {
+        printf("Uruchamiam proces fryzjerzy.c\n");
+        execlp("./fryzjerzy", "./fryzjerzy", (char *)NULL); 
+        perror("Błąd przy uruchamianiu fryzjerzy.c");
+        exit(1);
+    } else if (pid_fryzjerzy < 0) {
+        perror("Błąd przy tworzeniu procesu fryzjerzy");
+        exit(1);
+    }
+    pid_fotele = fork();
+    if (pid_fotele == 0) {
+        printf("Uruchamiam proces fotele.c\n");
+        execlp("./fotele", "./fotele", (char *)NULL);  
+        perror("Błąd przy uruchamianiu fotele.c");
+        exit(1);
+    } else if (pid_fotele < 0) {
+        perror("Błąd przy tworzeniu procesu fotele");
+        exit(1);
+    }
+    pid_klienci = fork();
+    if (pid_klienci == 0) {
+        printf("Uruchamiam proces klient.c\n");
+        execlp("./klienci", "./klienci", (char *)NULL);  
+        perror("Błąd przy uruchamianiu klient.c");
+        exit(1);
+    } else if (pid_klienci < 0) {
+        perror("Błąd przy tworzeniu procesu klient");
+        exit(1);
+    }
+    waitpid(pid_fryzjerzy, NULL, 0);
+    waitpid(pid_fotele, NULL, 0);
+    waitpid(pid_klienci, NULL, 0);
 
-int sem_poczekalnia;
-
-void utworz_nowy_semafor(void)
-  {
-    sem_poczekalnia=semget(110370,1,0666|IPC_CREAT);
-    if (sem_poczekalnia==-1)
-      {
-        printf("Nie moglem utworzyc nowego semafora.\n");
-        exit(EXIT_FAILURE);
-      }
-    else
-      {
-	printf("Semafor zostal utworzony : %d\n",sem_poczekalnia);
-      }
-  }
-void semafor_p(int zmien_sem)
-  {
-   
-    struct sembuf bufor_sem;
-    bufor_sem.sem_num=0;
-    bufor_sem.sem_op=-1;
-    bufor_sem.sem_flg=0;
-    zmien_sem=semop(sem_poczekalnia,&bufor_sem,1);
-    if (zmien_sem==-1) 
-      {
-	if(errno == EINTR){
-	semafor_p(zmien_sem);
-	}
-	else
-	{
-        printf("Nie moglem zamknac semafora.\n");
-        exit(EXIT_FAILURE);
-	}
-      }
-    else
-      {
-        printf("Semafor zostal zamkniety.\n");
-      }
-  }
-
-void semafor_v(int zmien_sem)
-  {
-    struct sembuf bufor_sem;
-    bufor_sem.sem_num=0;
-    bufor_sem.sem_op=1;
-    bufor_sem.sem_flg=SEM_UNDO;
-    zmien_sem=semop(sem_poczekalnia,&bufor_sem,1);
-    if (zmien_sem==-1) 
-      {
-        printf("Nie moglem otworzyc semafora.\n");
-        exit(EXIT_FAILURE);
-      }
-    else
-      {
-        printf("Semafor zostal otwarty.\n");
-      }
-  }
-
-static void usun_semafor(void)  
-  {
-    int sem;
-    sem=semctl(sem_poczekalnia,0,IPC_RMID);
-    if (sem==-1)
-      {
-        printf("Nie mozna usunac semafora.\n");
-        exit(EXIT_FAILURE);
-      }
-    else
-      {
-	printf("Semafor zostal usuniety : %d\n",sem);
-      }
-  }
-
-
-
-
-int main()
-{
-utworz_nowy_semafor();
-printf("%d,%d",sem_poczekalnia,semctl(sem_poczekalnia,0,GETVAL));
-
-return 0;
+    printf("Wszystkie procesy zostały zakończone.\n");
+    return 0;
 }

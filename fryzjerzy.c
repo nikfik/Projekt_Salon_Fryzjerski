@@ -10,64 +10,56 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <time.h>
+#include "semafor.h"
 
 #define MAX_FRYZJER 3      
 
 struct sembuf sb;
 
-int utworz_semafor(key_t key, int liczba_semaforow) {
-    int semid = semget(key, liczba_semaforow, IPC_CREAT | 0666);
-    if (semid == -1) {
-        perror("Błąd tworzenia semafora");
-        exit(1);
-    }
-    return semid;
-}
 
-void ustaw_semafor(int semid, int num, int val) {
-    if (semctl(semid, num, SETVAL, val) == -1) {
-        perror("Błąd inicjalizacji semafora");
-        exit(1);
-    }
+void wez_fotel(int fryzjer_pid) {
+    printf("Fryzjer: Wysyłam sygnał do klienta, aby usiadł na fotelu.\n");
+    kill(fryzjer_pid, SIGUSR1);  // Wysyłamy sygnał fryzjerowi
+    kill(fryzjer_pid, SIGUSR2);
 }
 
 
 void fryzjer(int id, int semid) {
-    if (semctl(semid, 0, GETVAL) > 0)
+    if(semctl(semid,0,GETVAL)>0)
     {
-        sb.sem_num = 0;
-        sb.sem_op = -1;  //P
-        sb.sem_flg = 0;
-        semop(semid, &sb, 1);
+    sb.sem_num = 0;
+    sb.sem_op = -1;  //P
+    sb.sem_flg = 0;
+    semop(semid, &sb, 1);  
 
-        printf("fryzjer %d: w gotowości.(%d/%d)\n", id, semctl(semid, 0, GETVAL), MAX_FRYZJER);
+    printf("fryzjer %d: w gotowości.(%d/%d)\n", id,semctl(semid,0,GETVAL),MAX_FRYZJER);
 
+   
+    sleep(15);//TUTAJ FUNKCJE CO ROBI FRYZJER
+     wez_fotel(getpid());
 
-        sleep(15);//TUTAJ FUNKCJE CO ROBI FRYZJER
+    sb.sem_op = 1;  // V 
+    semop(semid, &sb, 1);  
 
-        sb.sem_op = 1;  // V 
-        semop(semid, &sb, 1);
-
-        printf("fryzjer %d: udaje sie na przerwę.\n", id);
+    printf("fryzjer %d: udaje sie na przerwę.\n", id);
     }
     else
     {
-        printf("osiągnięto limit fryzjerów %d.\n", id);
+      printf("osiągnięto limit fryzjerów %d.\n", id);
     }
 }
 
 
 void generuj_fryzjerow(key_t key) {
-    int semid = utworz_semafor(key, 1);
-    ustaw_semafor(semid, 0, MAX_FRYZJER);
+    int semid = utworz_semafor(key, 1); 
+    ustaw_semafor(semid, 0, MAX_FRYZJER);  
     for (int i = 0; i < MAX_FRYZJER; i++) {
-        pid_t pid = fork();
+        pid_t pid = fork();  
 
-        if (pid == 0) {
+        if (pid == 0) {  
             fryzjer(i + 1, semid);
-            exit(0);
-        }
-        else if (pid < 0) {
+            exit(0);  
+        } else if (pid < 0) {
             perror("Błąd przy tworzeniu procesu");
             exit(1);
         }
@@ -83,7 +75,7 @@ void generuj_fryzjerow(key_t key) {
 }
 
 int main() {
-    srand(time(NULL));
+    srand(time(NULL)); 
 
     key_t key = ftok(".", 'A');  // Tworzymy unikalny klucz dla semafora
     if (key == -1) {

@@ -10,27 +10,20 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <time.h>
+#include "semafor.h"
 
 #define MAX_KLIENCI 20      
-#define MAX_POCZEKALNIA 2 
+#define MAX_POCZEKALNIA 7
 
 struct sembuf sb;
 
-int utworz_semafor(key_t key, int liczba_semaforow) {
-    int semid = semget(key, liczba_semaforow, IPC_CREAT | 0666);
-    if (semid == -1) {
-        perror("Błąd tworzenia semafora");
-        exit(1);
-    }
-    return semid;
-}
 
-void ustaw_semafor(int semid, int num, int val) {
-    if (semctl(semid, num, SETVAL, val) == -1) {
-        perror("Błąd inicjalizacji semafora");
-        exit(1);
+
+
+    void wez_fotel(int fryzjer_pid) {
+        printf("Klient: Wysyłam sygnał do fryzjera, aby usiadł na fotelu.\n");
+        kill(fryzjer_pid, SIGUSR1);  // Wysyłamy sygnał fryzjerowi
     }
-}
 
 
 void klient(int id, int semid) {
@@ -44,7 +37,10 @@ void klient(int id, int semid) {
     printf("Klient %d: Zajął miejsce w poczekalni.(%d/%d)\n", id,semctl(semid,0,GETVAL),MAX_POCZEKALNIA);
 
    
-    sleep(3);//TUTAJ FUNKCJE CO ROBI KLIENT
+   // sleep(15);//TUTAJ FUNKCJE CO ROBI KLIENT
+    wez_fotel(getpid());
+
+
 
     sb.sem_op = 1;  // V 
     semop(semid, &sb, 1);  
