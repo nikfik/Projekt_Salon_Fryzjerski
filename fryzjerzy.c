@@ -12,78 +12,112 @@
 #include <time.h>
 #include "semafor.h"
 
-#define MAX_FRYZJER 3      
+#define MAX_FRYZJER 5    
+#define MAX_FOTEL 3
 
 struct sembuf sb;
 
+struct msgbuf {
+    long mtype;  
+    pid_t pid;   
+};
 
-void wez_fotel(int fryzjer_pid) {
-    printf("Fryzjer: Wysyłam sygnał do klienta, aby usiadł na fotelu.\n");
-    kill(fryzjer_pid, SIGUSR1);  // Wysyłamy sygnał fryzjerowi
-    kill(fryzjer_pid, SIGUSR2);
+void znajdz_fotel(int id,int semid,pid_t mpid) {
+if(semctl(semid,0,GETVAL)>0)
+{
+sb.sem_num = 0;
+sb.sem_op = -1;  //P
+sb.sem_flg = 0;
+semop(semid, &sb, 1); 
+ if (kill(mpid, SIGUSR1) == -1) {
+        perror("Błąd przy wysyłaniu sygnału");
+        exit(1);
+    }
+else{
+    printf("fryzjer %d poprosil klienta %d na fotel %d\n",id,mpid,MAX_FOTEL-semctl(semid,0,GETVAL));
+    }
+}
+
 }
 
 
-void fryzjer(int id, int semid) {
-    if(semctl(semid,0,GETVAL)>0)
+void fryzjer(int id, int msmid,key_t key_kk,int semid) {
+    
+
+    printf("fryzjer %d: w gotowości.\n", id);
+
+    struct msgbuf message;
+    int msgid = msgget(key_kk, 0600);  
+    if (msgid == -1) {
+        perror("Błąd przy uzyskiwaniu dostępu do kolejki");
+        exit(1);
+    }
+    if(msgrcv(msgid, &message, sizeof(pid_t), 0, 0) == -1)
     {
-    sb.sem_num = 0;
-    sb.sem_op = -1;  //P
-    sb.sem_flg = 0;
-    semop(semid, &sb, 1);  
-
-    printf("fryzjer %d: w gotowości.(%d/%d)\n", id,semctl(semid,0,GETVAL),MAX_FRYZJER);
-
-   
-    sleep(15);//TUTAJ FUNKCJE CO ROBI FRYZJER
-     wez_fotel(getpid());
-
-    sb.sem_op = 1;  // V 
-    semop(semid, &sb, 1);  
-
-    printf("fryzjer %d: udaje sie na przerwę.\n", id);
+        //printf("fryzjer %d:",id);   
+        perror("Błąd przy odbieraniu wiadomości");
+        exit(1);
     }
     else
     {
-      printf("osiągnięto limit fryzjerów %d.\n", id);
+        printf("fryzjer %d Otrzymanł PID: %d z kolejki komunikatów\n",id, message.pid);
+        znajdz_fotel(id,semid,message.pid);
+        //powiedz_cene();
+        //ostrzyz();
+        //wylicz();
+        sleep(5);
+        sb.sem_op = 1;  // V 
+        semop(semid, &sb, 1);
     }
+
+    
+
+    printf("fryzjer %d: udaje sie na przerwę.\n", id);
+    
+   
 }
 
 
-void generuj_fryzjerow(key_t key) {
+void generuj_fryzjerow(key_t key, int msgid,key_t key_kk) {
     int semid = utworz_semafor(key, 1); 
-    ustaw_semafor(semid, 0, MAX_FRYZJER);  
+    ustaw_semafor(semid, 0, MAX_FOTEL);  
     for (int i = 0; i < MAX_FRYZJER; i++) {
         pid_t pid = fork();  
 
         if (pid == 0) {  
-            fryzjer(i + 1, semid);
+            fryzjer(i + 1, msgid,key_kk,semid);
             exit(0);  
         } else if (pid < 0) {
-            perror("Błąd przy tworzeniu procesu");
+            perror("Błąd przy tworzeniu procesu fryzjera");
             exit(1);
         }
     }
 
-    // Czekamy, aż wszystkie procesy dzieci zakończą działanie
-    for (int i = 0; i < MAX_FRYZJER; i++) {
-        wait(NULL);  // Czekamy na zakończenie każdego procesu klienta
-    }
 
-    // Usuwamy semafory po zakończeniu wszystkich procesów
-    semctl(semid, 0, IPC_RMID);
+    for (int i = 0; i < MAX_FRYZJER; i++) {
+        wait(NULL);  
+    }
 }
 
 int main() {
     srand(time(NULL)); 
 
-    key_t key = ftok(".", 'A');  // Tworzymy unikalny klucz dla semafora
+    key_t key = ftok(".", 'A');  
     if (key == -1) {
         perror("Błąd przy generowaniu klucza");
         exit(1);
     }
-    generuj_fryzjerow(key);
+    key_t key_kk = ftok(".", 'C');
+    if (key_kk == -1) {
+        perror("Błąd przy generowaniu klucza");
+        exit(1);
+    }
+    int msgid = msgget(key_kk, IPC_CREAT | 0600);  
+    if (msgid == -1) {
+        perror("Błąd przy tworzeniu kolejki");
+        exit(1);
+    }
+    generuj_fryzjerow(key,msgid,key_kk);
 
     return 0;
 }
-
