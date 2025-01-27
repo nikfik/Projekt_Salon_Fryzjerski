@@ -11,7 +11,6 @@
 #include <sys/wait.h>
 #include <time.h>
 #include "semafor.h"
-
 #define MAX_FRYZJER 5    
 #define MAX_FOTEL 3
 
@@ -19,14 +18,27 @@ struct sembuf sb;
 
 struct msgbuf {
     long mtype;  
-    pid_t pid;   
+    pid_t pid;
 };
+
+void obsluz_signal_odblokuj(int sig) {
+    if (sig == SIGUSR1) {
+        sleep(1);
+    }
+    else
+    {
+        printf("BLAD Sygnalu\n");
+    }
+    printf("???");
+}
+
+
 
 void znajdz_fotel(int id,int semid,pid_t mpid) {
 if(semctl(semid,0,GETVAL)>0)
 {
 sb.sem_num = 0;
-sb.sem_op = -1;  //P
+sb.sem_op = -1;  
 sb.sem_flg = 0;
 semop(semid, &sb, 1); 
  if (kill(mpid, SIGUSR1) == -1) {
@@ -35,16 +47,41 @@ semop(semid, &sb, 1);
     }
 else{
     printf("fryzjer %d poprosil klienta %d na fotel %d\n",id,mpid,MAX_FOTEL-semctl(semid,0,GETVAL));
+    sleep(1);
+    union sigval value;
+    value.sival_int = getpid();
+    //printf("\n%d\n",getpid());
+      if (sigqueue(mpid, SIGUSR2, value) == -1) {
+        perror("Błąd przy wysyłaniu sygnału");
+        exit(1);
+      }
+      printf("fryzjer %d [%d] wyslal do %d \n",id,getpid(),mpid);
     }
 }
 
 }
 
+void powiedz_cene(int id,pid_t pid)
+{
+    signal(SIGUSR1, obsluz_signal_odblokuj);
+    pause();
+int kwota = rand() % 4 + 5;
+kwota=kwota*10;
+    union sigval value;
+    value.sival_int = kwota;
+      if (sigqueue(pid, SIGUSR1, value) == -1) {
+        perror("Błąd przy wysyłaniu sygnału");
+        exit(1);
+      }
+      printf("fryzjer %d: wystawia rachunek o wysokości %d\n",id,kwota);
+}
+
+
 
 void fryzjer(int id, int msmid,key_t key_kk,int semid) {
     
 
-    printf("fryzjer %d: w gotowości.\n", id);
+    printf("fryzjer %d: w gotowości[%d].\n", id,getpid());
 
     struct msgbuf message;
     int msgid = msgget(key_kk, 0600);  
@@ -54,7 +91,6 @@ void fryzjer(int id, int msmid,key_t key_kk,int semid) {
     }
     if(msgrcv(msgid, &message, sizeof(pid_t), 0, 0) == -1)
     {
-        //printf("fryzjer %d:",id);   
         perror("Błąd przy odbieraniu wiadomości");
         exit(1);
     }
@@ -62,7 +98,7 @@ void fryzjer(int id, int msmid,key_t key_kk,int semid) {
     {
         printf("fryzjer %d Otrzymanł PID: %d z kolejki komunikatów\n",id, message.pid);
         znajdz_fotel(id,semid,message.pid);
-        //powiedz_cene();
+        powiedz_cene(id,message.pid);
         //ostrzyz();
         //wylicz();
         sleep(5);
@@ -72,8 +108,7 @@ void fryzjer(int id, int msmid,key_t key_kk,int semid) {
 
     
 
-    printf("fryzjer %d: udaje sie na przerwę.\n", id);
-    
+    //printf("fryzjer %d: udaje sie na przerwę.\n", id);
    
 }
 

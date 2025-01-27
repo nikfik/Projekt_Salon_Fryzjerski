@@ -16,7 +16,7 @@
 #define MAX_POCZEKALNIA 2
 struct msgbuf {
     long mtype;  
-    pid_t pid;  
+    pid_t pid; 
 };
 
 struct sembuf sb;
@@ -32,11 +32,21 @@ int suma(int *portfel)
 void obsluz_signal(int sig) {
     if (sig == SIGUSR1) {
         printf("Klient: Otrzymał sygnał, siada na fotelu.\n");
+        //sleep(5);
+    }
+    else
+    {
+        printf("BLAD Sygnalu:v2\n");
+    }
+}
+void obsluz_signal2(int sig, siginfo_t *info,void *ucontext) {
+    if (sig == SIGUSR2) {
+        printf("Klient: Otrzymał inta %d\n",info->si_value.sival_int);
         sleep(5);
     }
     else
     {
-        printf("BLAD Sygnalu\n");
+        printf("BLAD Sygnalu:v3\n");
     }
 }
 
@@ -51,9 +61,51 @@ void zarabiaj(int* portfel)
     }
     else if (suma(portfel) < 100) zarabiaj(portfel);
 }
-void zaplac(int id,int *portfel,int cena)
+void czekaj_na_fryzjera(int id,int pid,int msgid)
 {
-    printf("klient %d: zaplacil\n",id);
+struct msgbuf message;
+    message.mtype = 1;  
+    message.pid = pid;
+
+if (msgsnd(msgid, &message, sizeof(pid_t), 0) == -1) 
+    {
+        perror("Błąd przy wysyłaniu wiadomości");
+        exit(1);
+    }
+
+      printf("Klient %d: wyslal swoj pid[%d] do kolejki\n",id,pid);
+    signal(SIGUSR1, SIG_IGN);  
+}
+void usiadz_na_fotelu(int id)
+{ 
+    signal(SIGUSR1, obsluz_signal);
+    struct sigaction sa;
+    sa.sa_flags = SA_SIGINFO;
+    sa.sa_sigaction = obsluz_signal2;  
+    if (sigaction(SIGUSR2, &sa, NULL) == -1) {
+        perror("Błąd przy rejestracji sygnału");
+        exit(1);
+    }
+     printf("jestem tu?\n");  
+    pause(); 
+    printf("klient %d usiadl na fotelu\n",id);
+}
+void zaplac(int id,int *portfel)
+{
+    struct sigaction sig;
+    sig.sa_flags = SA_SIGINFO;  
+    sig.sa_sigaction = obsluz_signal2;
+    if (sigaction(SIGUSR1, &sig, NULL) == -1) {
+        perror("Błąd przy rejestracji sygnału");
+        exit(1);
+    }
+     int cena=0;
+    //signal(SIGUSR1, obsluz_signal2);
+    //kill(pid_f, SIGUSR1) == -1)//usiadlem! 
+    pause();
+    
+
+    printf("klient %d: zaplacil %d\n",id,cena);
     int nominaly[3] = { 10,20,50 };
     int zaplacone = 0;
     for (int i = 2; zaplacone < cena && i>=0; i--)
@@ -83,25 +135,9 @@ int zajmij_miejsce(int id, int semid)
     }
 
 }
-void czekaj_na_fryzjera(int id,int pid,int msgid)
-{
-struct msgbuf message;
-    message.mtype = 1;  
-    message.pid = pid;
 
-if (msgsnd(msgid, &message, sizeof(pid_t), 0) == -1) 
-    {
-        perror("Błąd przy wysyłaniu wiadomości");
-        exit(1);
-    }
-
-      printf("Klient %d: wyslal swoj pid[%d] do kolejki\n",id,pid);
-    signal(SIGUSR1, SIG_IGN);  
-}
 void zostan_ostrzyzonym(int id)
 {
-    signal(SIGUSR1, obsluz_signal);
-    sleep(5);
     printf("Klient %d: Zakończył strzyżenie\n",id);
     sleep(1);
     }
@@ -118,17 +154,16 @@ void klient(int id, int semid,int msgid) {
  
     int *portfel =(int*) malloc(3*sizeof(int));
     for (int i = 0;i < 3;i++) portfel[i] = 0;
-    int cena =80;//TEMP
-
         
         printf("Klient %d: Idzie zarabiać.\n",id);
-        zarabiaj(portfel);
+       // zarabiaj(portfel);
         printf("Klient %d: Ma teraz %dzł.\n",id,suma(portfel));
         sleep(1);
         if(zajmij_miejsce(id, semid))
         {
         czekaj_na_fryzjera(id,getpid(),msgid);
-        zaplac(id,portfel,cena);
+        usiadz_na_fotelu(id);
+        zaplac(id,portfel);
         zostan_ostrzyzonym(id);
 
         //otrzymaj_reszte(*portfel)
