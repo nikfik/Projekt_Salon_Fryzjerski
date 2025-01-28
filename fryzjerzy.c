@@ -82,16 +82,21 @@ semop(semid, &sb, 1);
       zapisz("fryzjer %d [%d] wyslal do %d \n",id,getpid(),mpid);
 }
 
-void czekaj_na_klienta(int id,pid_t mpid,int pamiec_kasjer)
+void czekaj_na_klienta(int id,pid_t mpid,int pamiec_kasjer,int semafor_fryzjer)
 {
+        sb.sem_num = 0;
+        sb.sem_op = -1; 
+        sb.sem_flg = 0;
+        semop(semafor_fryzjer, &sb, 1);
      struct shared_memory *shared_mem = (struct shared_memory *)shmat(pamiec_kasjer, NULL, 0);
     shared_mem->pid_fryzjera=getpid();
     zapisz("fryzjer %d: czeka az klient zaplaci\n",id);
     signal(SIGUSR1, obsluz_signal_odblokuj);
     pause();//czekaj az klient skonczy placic
-  //  zapisz("fryzjer %d: sie niecierpliwi\n",id);
-   // pause();//czekaj na drugi sygnal od kasjera
     zapisz("fryzjer %d: sie doczekal\n",id);
+        sb.sem_op = 1; 
+        semop(semafor_fryzjer, &sb, 1);
+
 }
 
 void ostrzyz(int semid,int id,int pid_klienta)
@@ -128,7 +133,7 @@ void idz_na_przerwe_chyba(int id)
 
 
 
-void fryzjer(int id, int msgid,int semid,int pamiec_kasjer) {
+void fryzjer(int id, int msgid,int semid,int pamiec_kasjer,int semafor_fryzjer) {
     signal(SIGUSR2, zakocz_sie);
     int emergency_closeup=200;
 
@@ -148,7 +153,7 @@ void fryzjer(int id, int msgid,int semid,int pamiec_kasjer) {
     {
         zapisz("fryzjer %d Otrzymanł PID: %d klienta %d z kolejki komunikatów\n",id, message.pid,message.id);
         znajdz_fotel(id,semid,message.id,message.pid);
-        czekaj_na_klienta(id,message.pid,pamiec_kasjer);
+        czekaj_na_klienta(id,message.pid,pamiec_kasjer,semafor_fryzjer);
         ostrzyz(semid,id,message.pid);
         idz_na_przerwe_chyba(id);
     }
@@ -160,7 +165,7 @@ void fryzjer(int id, int msgid,int semid,int pamiec_kasjer) {
 }
 
 
-void generuj_fryzjerow(key_t key, int msgid,int pamiec_kasjer,int kolejka_fryzjerzy) {
+void generuj_fryzjerow(key_t key, int msgid,int pamiec_kasjer,int kolejka_fryzjerzy,int semafor_fryzjer) {
     int semid = utworz_semafor(key, 1); 
     ustaw_semafor(semid, 0, MAX_FOTEL);  
     for (int i = 0; i < MAX_FRYZJER; i++) {
@@ -175,7 +180,7 @@ void generuj_fryzjerow(key_t key, int msgid,int pamiec_kasjer,int kolejka_fryzje
                      perror("Błąd przy dodawaniu pida do kolejki fryzjerzy");
                      exit(1);
                  }
-            fryzjer(i + 1, msgid,semid,pamiec_kasjer);
+            fryzjer(i + 1, msgid,semid,pamiec_kasjer,semafor_fryzjer);
             exit(0);  
         } else if (pid < 0) {
             perror("Błąd przy tworzeniu procesu fryzjera");
@@ -232,9 +237,15 @@ int pamiec_kasjer = shmget(key_pamiec_kasjer, SHM_SIZE, IPC_CREAT | 0600);
         perror("Błąd przy tworzeniu kolejki");
         exit(1);
     }
-
+key_t key_semafor_fryzjer = ftok(".", 'J');
+if (key_semafor_fryzjer== -1) {
+    perror("Błąd przy generowaniu klucza");
+    exit(1);
+}
+    int sem_fryzjer = utworz_semafor(key_semafor_fryzjer, 1);
     int sem_kasjer = utworz_semafor(key_semafor_kasjer, 1);
-    generuj_fryzjerow(key,msgid,pamiec_kasjer,kolejka_fryzjerzy);
+    ustaw_semafor(sem_fryzjer, 0, 1);
+    generuj_fryzjerow(key,msgid,pamiec_kasjer,kolejka_fryzjerzy,sem_fryzjer);
 
     return 0;
 }

@@ -23,7 +23,7 @@ struct shared_data {
 };
 void zegar(struct shared_data *shared) {
     shared->tp=8;
-    shared->tk=18;
+    shared->tk=14;
     while (shared->tp < shared->tk) { 
         printf("--------godzina %d:00----------\n",shared->tp);
         sleep(15); 

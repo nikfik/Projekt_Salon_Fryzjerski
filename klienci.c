@@ -418,4 +418,4 @@ ustaw_semafor(semafor_kasjer, 0, 1);
 
 generuj_klientow(key,msgid,pamiec_kasjer,semafor_kasjer,kolejka_klienci,kolejka_klienci2); 
 return 0;
-}
+}   
