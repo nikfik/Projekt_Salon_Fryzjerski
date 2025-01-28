@@ -12,8 +12,24 @@ struct komunikat {
 };
 
 int main() {
-    pid_t pid_fryzjerzy, pid_klienci,pid_debug,pid_kasjer;
+    pid_t pid_fryzjerzy, pid_klienci,pid_debug,pid_kasjer,pid_usun;
 
+    pid_usun = fork();
+    if (pid_usun == 0) {
+        execlp("rm klienci_summary.txt", "rm klienci_summary.txt", (char *)NULL); 
+        exit(1);
+    } else if (pid_usun < 0) {
+        perror("Błąd przy tworzeniu procesu fryzjerzy");
+        exit(1);
+    }
+    pid_usun = fork();
+    if (pid_usun == 0) {
+        execlp("rm fryzjer_summary.txt", "rm fryzjer_summary.txt", (char *)NULL);
+        exit(1);
+    } else if (pid_usun < 0) {
+        perror("Błąd przy tworzeniu procesu fryzjerzy");
+        exit(1);
+    }
     pid_fryzjerzy = fork();
     if (pid_fryzjerzy == 0) {
         printf("Uruchamiam proces fryzjerzy.c\n");

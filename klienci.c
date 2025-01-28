@@ -12,9 +12,10 @@
 #include <time.h>
 #include "semafor.h"
 #include <math.h>
+#include <stdarg.h>
 
-#define MAX_KLIENCI 1      
-#define MAX_POCZEKALNIA 2
+#define MAX_KLIENCI 10      
+#define MAX_POCZEKALNIA 6
 struct shared_memory {
     pid_t pid_klienta;  
     pid_t pid_kasjera;  
@@ -28,6 +29,7 @@ struct shared_memory {
 struct msgbuf {
     long mtype;  
     pid_t pid; 
+    int id;
 };
 struct msgbuf2 {
     long mtype;  
@@ -35,6 +37,26 @@ struct msgbuf2 {
     int liczba;
 };
 struct sembuf sb;
+
+
+void zapisz(const char *format, ...) {
+    FILE *file = fopen("klienci_summary.txt", "a");
+    if (file == NULL) {
+        perror("Błąd przy otwieraniu pliku");
+        return;
+    }
+
+    va_list args;
+    va_start(args, format);
+    char buffer[1024];
+    vsprintf(buffer, format, args);
+    printf("%s", buffer);
+    fprintf(file, "%s", buffer);
+
+    va_end(args);
+    fclose(file);
+}
+
 
 int suma(int *portfel)
 {
@@ -51,23 +73,14 @@ void przelicz_pieniadze(int bin,int *banknoty)
     }
 }
 
-void obsluz_signal(int sig) {
-    if (sig == SIGUSR1) {
-        printf("klient: otrzymal sygnal, idzie do fotela.\n");
-    }
-    else
-    {
-        printf("BLAD Sygnalu:v1\n");
-    }
-}
 void obsluz_signal2(int sig, siginfo_t *info,void *ucontext) {
     if (sig == SIGUSR2) {
-        printf("klient: Otrzymał inta %d\n",info->si_value.sival_int);
+        //printf("klient: Otrzymał inta %d\n",info->si_value.sival_int);
         kill(info->si_value.sival_int, SIGUSR1) == -1;//synchronizacja  
     }
     else
     {
-        printf("BLAD Sygnalu:v2\n");
+        zapisz("BLAD Sygnalu:v2\n");
     }
 }
 void obudz(int sig) {
@@ -75,13 +88,13 @@ void obudz(int sig) {
     }
     else
     {
-        printf("BLAD Sygnalu:v3\n");
+        zapisz("BLAD Sygnalu:\n");
     }
 }
 void zarabiaj(int* portfel)
 {
     int liczba = rand() % 3 + 1;
-   // sleep(1);
+    sleep(1);
     if (liczba >= 0 && liczba <= 2) {
         portfel[liczba]++;
         zarabiaj(portfel);
@@ -98,12 +111,12 @@ int zajmij_miejsce(int id, int semid)
         sb.sem_flg = 0;
         semop(semid, &sb, 1);
 
-        printf("klient %d: Zajął miejsce w poczekalni.(%d/%d)\n", id, semctl(semid, 0, GETVAL), MAX_POCZEKALNIA);
+        zapisz("klient %d: Zajął miejsce w poczekalni.(%d/%d)\n", id, semctl(semid, 0, GETVAL), MAX_POCZEKALNIA);
         return 1;
     }
     else
     {
-        printf("klient %d: Nie było miejsca dla klienta wiec wychodzi.\n", id);
+        zapisz("klient %d: Nie było miejsca dla klienta wiec wychodzi.\n", id);
         return 0;
     }
 
@@ -114,23 +127,24 @@ void czekaj_na_fryzjera(int id,int pid,int msgid)
 struct msgbuf message;
     message.mtype = 1;  
     message.pid = pid;
+    message.id=id;
 
-if (msgsnd(msgid, &message, sizeof(pid_t), 0) == -1) 
+if (msgsnd(msgid, &message, sizeof(struct msgbuf), 0) == -1) 
     {
         perror("Błąd przy wysyłaniu wiadomości");
         exit(1);
     }
 
-      printf("klient %d: wyslal swoj pid[%d] do kolejki\n",id,pid);
+      zapisz("klient %d: wyslal swoj pid[%d] do kolejki\n",id,pid);
     signal(SIGUSR1, SIG_IGN);  
 }
 
 
 void usiadz_na_fotelu(int id)
 { 
-    signal(SIGUSR1, obsluz_signal);
-    
+    signal(SIGUSR1, obudz);
     pause();
+    zapisz("klient: otrzymal sygnal, idzie do fotela.\n");
     struct sigaction sa;
     sa.sa_flags = SA_SIGINFO;
     sa.sa_sigaction = obsluz_signal2;  
@@ -138,14 +152,14 @@ void usiadz_na_fotelu(int id)
         perror("Błąd przy rejestracji sygnału");
         exit(1);
     }
-    printf("klient %d usiadl na fotelu\n",id);
+    zapisz("klient %d usiadl na fotelu\n",id);
 }
 
 
 
 void zaplac(int id,int *portfel,int pamiec_kasjer,int semafor_kasjer)
 {
-    printf("klient %d chce zaplacic\n",id);
+    zapisz("klient %d chce zaplacic\n",id);
     signal(SIGUSR1, obudz);
     pause();
         sb.sem_num = 0;
@@ -160,7 +174,7 @@ void zaplac(int id,int *portfel,int pamiec_kasjer,int semafor_kasjer)
         }
         shared_mem->pid_klienta = getpid();
 
-        printf("klient %d: budzi kasjera\n",id);
+        zapisz("klient %d: budzi kasjera\n",id);
         if(kill(shared_mem->pid_kasjera, SIGUSR1) == -1){//obudz kasjera
         perror("Błąd przy wysyłaniu sygnału");
         exit(1);}
@@ -168,8 +182,8 @@ void zaplac(int id,int *portfel,int pamiec_kasjer,int semafor_kasjer)
     
         int nominaly[3] = { 10,20,50 };
         int zaplacone = 0;
-        printf("klient %d:szuka pieniedzy w portfelu by zaplacic %d\n",id,shared_mem->kwota);
-        printf("klient %d ma: %dx10zl, %dx20zl, %dx50zl\n",id,portfel[0],portfel[1],portfel[2]);
+        zapisz("klient %d:szuka pieniedzy w portfelu by zaplacic %d\n",id,shared_mem->kwota);
+        zapisz("klient %d ma: %dx10zl, %dx20zl, %dx50zl\n",id,portfel[0],portfel[1],portfel[2]);
     for (int i = 2; i>=0; i--)
     {
         if(zaplacone < shared_mem->kwota&&portfel[i]>0)
@@ -180,20 +194,19 @@ void zaplac(int id,int *portfel,int pamiec_kasjer,int semafor_kasjer)
         i++;
         }
     }
-    printf("klient %d:placi%d z %d\n",id,zaplacone,shared_mem->kwota);
+    zapisz("klient %d:placi%d z %d\n",id,zaplacone,shared_mem->kwota);
     if(kill(shared_mem->pid_kasjera, SIGUSR1) == -1){//zaplac
         perror("Błąd przy wysyłaniu sygnału");
         exit(1);
     }
     pause();
 
-    printf("klient %d: dostaje reszte\n",id);
+    zapisz("klient %d: dostaje reszte\n",id);
     for(int i=0;i<=2;i++)
     { 
         portfel[i]+=shared_mem->reszta[i];
     }
-   // printf("pid fryzjera:%d\n",shared_mem->pid_fryzjera);
-    printf("klient %d: po wydaniu reszty ma %dx10zl, %dx20zl, %dx50zl\n",id,portfel[0],portfel[1],portfel[2]);
+    zapisz("klient %d: po wydaniu reszty ma %dx10zl, %dx20zl, %dx50zl\n",id,portfel[0],portfel[1],portfel[2]);
     if(kill(shared_mem->pid_fryzjera, SIGUSR1) == -1){
         perror("Błąd przy wysyłaniu sygnału1");
         exit(1);
@@ -218,7 +231,7 @@ void zostan_ostrzyzonym(int id)
         exit(1);
     } 
     pause();
-    printf("Klient %d: schodzi z fotela zadowolony\n",id);
+    zapisz("Klient %d: schodzi z fotela zadowolony\n",id);
 }
 
 void opusc_salon(int id, int semid)
@@ -226,7 +239,7 @@ void opusc_salon(int id, int semid)
     sb.sem_op = 1;  
     semop(semid, &sb, 1);
 
-    printf("Klient %d: Opuszcza poczekalnię.(%d/%d)\n", id, semctl(semid, 0, GETVAL), MAX_POCZEKALNIA);
+    zapisz("Klient %d: Opuszcza poczekalnię.(%d/%d)\n", id, semctl(semid, 0, GETVAL), MAX_POCZEKALNIA);
 }
 
 void klient(int id, int semid,int msgid,int sem_petla,int pamiec_kasjer,int semafor_kasjer) {
@@ -236,9 +249,9 @@ void klient(int id, int semid,int msgid,int sem_petla,int pamiec_kasjer,int sema
  while(emergency_closeup){while(semctl(sem_petla,0,GETVAL)){
         
         int temp_money=suma(portfel);
-        printf("Klient %d: Idzie zarabiać.\n",id);
+        zapisz("Klient %d: Idzie zarabiać.\n",id);
         zarabiaj(portfel);
-        printf("Klient %d: zarobił %dzł.[%d]->[%d]\n",id,suma(portfel)-temp_money,temp_money,suma(portfel));
+        zapisz("Klient %d: zarobił %dzł.[%d]->[%d]\n",id,suma(portfel)-temp_money,temp_money,suma(portfel));
         sleep(1);
         if(zajmij_miejsce(id, semid))
         {
@@ -246,7 +259,7 @@ void klient(int id, int semid,int msgid,int sem_petla,int pamiec_kasjer,int sema
         usiadz_na_fotelu(id);
         temp_money=suma(portfel);
         zaplac(id,portfel,pamiec_kasjer,semafor_kasjer);
-        printf("Klient %d: zaplacil .[%d]->[%d]\n",id,temp_money,suma(portfel));
+        zapisz("Klient %d: zaplacil .[%d]->[%d]\n",id,temp_money,suma(portfel));
         zostan_ostrzyzonym(id);
         
         opusc_salon(id, semid);

@@ -11,9 +11,27 @@
 #include <sys/wait.h>
 #include <time.h>
 #include "semafor.h"
+#include <stdarg.h>
 #define MAX_FRYZJER 5    
 #define MAX_FOTEL 3
 
+void zapisz(const char *format, ...) {
+    FILE *file = fopen("fryzjer_summary.txt", "a");
+    if (file == NULL) {
+        perror("Błąd przy otwieraniu pliku");
+        return;
+    }
+
+    va_list args;
+    va_start(args, format);
+    char buffer[1024];
+    vsprintf(buffer, format, args);
+    printf("%s", buffer);
+    fprintf(file, "%s", buffer);
+
+    va_end(args);
+    fclose(file);
+}
 struct sembuf sb;
 struct shared_memory {
     pid_t pid_klienta;  
@@ -28,6 +46,7 @@ struct shared_memory {
 struct msgbuf {
     long mtype;  
     pid_t pid;
+    int id;
 };
 
 void obsluz_signal_odblokuj(int sig) {
@@ -42,7 +61,7 @@ void obsluz_signal_odblokuj(int sig) {
 
 
 
-void znajdz_fotel(int id,int semid,pid_t mpid) {
+void znajdz_fotel(int id,int semid,int idk,pid_t mpid) {
 if(semctl(semid,0,GETVAL)>0)
 {
 sb.sem_num = 0;
@@ -54,7 +73,7 @@ semop(semid, &sb, 1);
         exit(1);
     }
 else{
-    printf("fryzjer %d poprosil klienta %d na fotel %d\n",id,mpid,MAX_FOTEL-semctl(semid,0,GETVAL));
+    zapisz("fryzjer %d poprosil klienta %d na fotel %d\n",id,idk,MAX_FOTEL-semctl(semid,0,GETVAL));
     sleep(1);
     union sigval value;
     value.sival_int = getpid();
@@ -62,7 +81,7 @@ else{
         perror("Błąd przy wysyłaniu sygnału");
         exit(1);
       }
-      printf("fryzjer %d [%d] wyslal do %d \n",id,getpid(),mpid);
+      zapisz("fryzjer %d [%d] wyslal do %d \n",id,getpid(),mpid);
     }
 }   
 
@@ -75,11 +94,11 @@ void czekaj_na_klienta(int id,int semafor_kasjer,pid_t mpid,int pamiec_kasjer)
     sb.sem_num = 0;
     sb.sem_op = -1;  
     sb.sem_flg = 0;
-    printf("fryzjer %d: czeka az klient zaplaci\n",id);
+    zapisz("fryzjer %d: czeka az klient zaplaci\n",id);
     signal(SIGUSR1, obsluz_signal_odblokuj);
     while(semctl(semafor_kasjer,0,GETVAL)!=2){/*printf("\nspam1:%d\n",semctl(semafor_kasjer,0,GETVAL));*/}
     semop(semafor_kasjer, &sb, 1); 
-    printf("fryzjer %d: wysyła sygnał do klienta\n",id);
+    zapisz("fryzjer %d: wysyła sygnał do klienta\n",id);
     if (kill(mpid, SIGUSR1) == -1) 
     {
         perror("Błąd przy wysyłaniu sygnału");
@@ -88,19 +107,20 @@ void czekaj_na_klienta(int id,int semafor_kasjer,pid_t mpid,int pamiec_kasjer)
     pause();//czekaj az klient skonczy placic
 }
 
-void ostrzyz(int semid,int id,int sepid)
+void ostrzyz(int semid,int id,int pid_klienta)
 {
-    printf("fryzjer %d strzyze...\n",id);
+    zapisz("fryzjer %d strzyze...\n",id);
     sleep(5);
     signal(SIGUSR1, obsluz_signal_odblokuj);
     union sigval value;
     value.sival_int = getpid();
-      if (sigqueue(sepid, SIGUSR2, value) == -1) {
+    zapisz("proba wyslania sygnalu do%d\n",pid_klienta);
+      if (sigqueue(pid_klienta, SIGUSR2, value) == -1) {
         perror("Błąd przy wysyłaniu sygnału");
         exit(1);
     }
     pause();
-    printf("fryzjer %d ostrzygl\n",id);
+    zapisz("fryzjer %d ostrzygl\n",id);
     sb.sem_op = 1;
     semop(semid, &sb, 1);
     //printf("semafor fotela1=%d",semctl(semid,0,GETVAL));
@@ -110,15 +130,20 @@ void idz_na_przerwe_chyba(int id)
     int czy_zasluzyl = rand()%4;
     if(czy_zasluzyl==3) 
     {
-        printf("fryzjer %d: udaje sie na przerwę.\n", id);
+        zapisz("fryzjer %d: udaje sie na przerwę.\n", id);
         sleep(10);
-        printf("fryzjer %d: wraca z przerwy.\n", id);
+        zapisz("fryzjer %d: wraca z przerwy.\n", id);
     }
 }
+
+
+
+
+
 void fryzjer(int id, int msmid,key_t key_kk,int semid,int sem_petla,int semafor_kasjer,int pamiec_kasjer) {
     int emergency_closeup=1000000;
 
-    printf("fryzjer %d: w gotowości[%d].\n", id,getpid());
+    zapisz("fryzjer %d: w gotowości[%d].\n", id,getpid());
 
     struct msgbuf message;
     int msgid = msgget(key_kk, 0600);  
@@ -128,17 +153,17 @@ void fryzjer(int id, int msmid,key_t key_kk,int semid,int sem_petla,int semafor_
     }
     while(emergency_closeup){while(semctl(sem_petla,0,GETVAL))
     {
-    if(msgrcv(msgid, &message, sizeof(pid_t), 0, 0) == -1)
+    if(msgrcv(msgid, &message, sizeof(struct msgbuf), 0, 0) == -1)
     {
         perror("Błąd przy odbieraniu wiadomości");
         exit(1);
     }
     else
     {
-        printf("fryzjer %d Otrzymanł PID: %d z kolejki komunikatów\n",id, message.pid);
-        znajdz_fotel(id,semid,message.pid);
+        zapisz("fryzjer %d Otrzymanł PID: %d klienta %d z kolejki komunikatów\n",id, message.pid,message.id);
+        znajdz_fotel(id,semid,message.id,message.pid);
         czekaj_na_klienta(id,semafor_kasjer,message.pid,pamiec_kasjer);
-        ostrzyz(semid,id,semid);
+        ostrzyz(semid,id,message.pid);
         idz_na_przerwe_chyba(id);
     }
     }
