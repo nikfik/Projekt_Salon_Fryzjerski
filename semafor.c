@@ -77,12 +77,34 @@ void cleanup()
         perror("Błąd przy generowaniu klucza");
         exit(1);
     }
+    key_t key_kolejka_klienci = ftok(".", 'G');
+    if (key_kolejka_klienci== -1) {
+        perror("Błąd przy generowaniu klucza");
+        exit(1);
+    }
+    int kolejka_klienci = msgget(key_kolejka_klienci, IPC_CREAT | 0600);  
+    if (kolejka_klienci == -1) {
+        perror("Błąd przy tworzeniu kolejki");
+        exit(1);
+    }
+    key_t key_kolejka_fryzjerzy = ftok(".", 'H');
+    if (key_kolejka_fryzjerzy== -1) {
+        perror("Błąd przy generowaniu klucza");
+        exit(1);
+    }
+    int kolejka_fryzjerzy = msgget(key_kolejka_fryzjerzy, IPC_CREAT | 0600);  
+    if (kolejka_fryzjerzy == -1) {
+        perror("Błąd przy tworzeniu kolejki");
+        exit(1);
+    }
     int semidA = utworz_semafor(keyA, 1);
     int semidB = utworz_semafor(keyB, 1);
     int semidD = utworz_semafor(key_petla, 1);
     int semidF = utworz_semafor(key_semafor_kasjer, 1);
     shmctl(pamiec_kasjer, IPC_RMID, NULL);//pamiec kasjer
     msgctl(msgid, IPC_RMID, NULL);//kolejka komunikatow
+    msgctl(kolejka_fryzjerzy, IPC_RMID, NULL);//kolejka fryzjerow
+    msgctl(kolejka_klienci, IPC_RMID, NULL);//kolejka klientow
     semctl(semidA, 0, IPC_RMID);//semafor foteli
     semctl(semidB, 0, IPC_RMID);//semafor poczekalni
     semctl(semidD, 0, IPC_RMID);//semafor petli

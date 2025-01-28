@@ -74,7 +74,7 @@ void przelicz_pieniadze(int bin,int *banknoty)
 }
 
 void obsluz_signal2(int sig, siginfo_t *info,void *ucontext) {
-    if (sig == SIGUSR2) {
+    if (sig == SIGUSR1) {
         //printf("klient: Otrzymał inta %d\n",info->si_value.sival_int);
         kill(info->si_value.sival_int, SIGUSR1) == -1;//synchronizacja  
     }
@@ -91,6 +91,29 @@ void obudz(int sig) {
         zapisz("BLAD Sygnalu:\n");
     }
 }
+void zakocz_sie(int sig) {
+    if (sig == SIGUSR2) {
+    zapisz("klient skonczyl dzialanie\n");
+    exit(0);
+    }
+    else
+    {
+        zapisz("BLAD Sygnalu:\n");
+    }
+}
+void zakocz_sie_z_sem(int sig) {
+    if (sig == SIGUSR2) {
+        sb.sem_op = 1; 
+      //  semop(semafor_kasjer, &sb, 1);
+    zapisz("klient skonczyl dzialanie\n");
+    exit(0);
+    }
+    else
+    {
+        zapisz("BLAD Sygnalu:\n");
+    }
+}
+
 void zarabiaj(int* portfel)
 {
     int liczba = rand() % 3 + 1;
@@ -148,7 +171,7 @@ void usiadz_na_fotelu(int id)
     struct sigaction sa;
     sa.sa_flags = SA_SIGINFO;
     sa.sa_sigaction = obsluz_signal2;  
-    if (sigaction(SIGUSR2, &sa, NULL) == -1) {
+    if (sigaction(SIGUSR1, &sa, NULL) == -1) {
         perror("Błąd przy rejestracji sygnału");
         exit(1);
     }
@@ -226,7 +249,7 @@ void zostan_ostrzyzonym(int id)
     struct sigaction sa;
     sa.sa_flags = SA_SIGINFO;
     sa.sa_sigaction = obsluz_signal2;  
-    if (sigaction(SIGUSR2, &sa, NULL) == -1) {
+    if (sigaction(SIGUSR1, &sa, NULL) == -1) {
         perror("Błąd przy rejestracji sygnału");
         exit(1);
     } 
@@ -242,11 +265,12 @@ void opusc_salon(int id, int semid)
     zapisz("Klient %d: Opuszcza poczekalnię.(%d/%d)\n", id, semctl(semid, 0, GETVAL), MAX_POCZEKALNIA);
 }
 
-void klient(int id, int semid,int msgid,int sem_petla,int pamiec_kasjer,int semafor_kasjer) {
- int emergency_closeup=1000000;
+void klient(int id, int semid,int msgid,int pamiec_kasjer,int semafor_kasjer) {
+    signal(SIGUSR2, zakocz_sie);
+ int emergency_closeup=10;
  int *portfel =(int*) malloc(3*sizeof(int));
     for (int i = 0;i < 3;i++) portfel[i] = 0;
- while(emergency_closeup){while(semctl(sem_petla,0,GETVAL)){
+ while(emergency_closeup){
         
         int temp_money=suma(portfel);
         zapisz("Klient %d: Idzie zarabiać.\n",id);
@@ -265,20 +289,32 @@ void klient(int id, int semid,int msgid,int sem_petla,int pamiec_kasjer,int sema
         opusc_salon(id, semid);
         
         }
-
-    }}
+    emergency_closeup--;
+    }
   
 }
 
 
-void generuj_klientow(key_t key,int msgid,int sem_petla,int pamiec_kasjer,int semafor_kasjer) {
+void generuj_klientow(key_t key,int msgid,int pamiec_kasjer,int semafor_kasjer,int kolejka_klienci) {
     int semid = utworz_semafor(key, 1);  
     ustaw_semafor(semid, 0, MAX_POCZEKALNIA);
     for (int i = 0; i < MAX_KLIENCI; i++) {
         pid_t pid = fork();
 
+        if(pid!=0){
+            struct msgbuf message;
+               message.mtype = 1;  
+                 message.pid = getpid();
+                 message.id=i+1;
+                 if (msgsnd(kolejka_klienci, &message, sizeof(struct msgbuf), 0) == -1) 
+                 {
+                     perror("Błąd przy dodawaniu pida do kolejki klienci");
+                     exit(1);
+                 }
+        }
+
         if (pid == 0) {
-            klient(i + 1, semid,msgid,sem_petla,pamiec_kasjer,semafor_kasjer);
+            klient(i + 1, semid,msgid,pamiec_kasjer,semafor_kasjer);
             exit(0);
         }
         else if (pid < 0) {
@@ -291,9 +327,9 @@ void generuj_klientow(key_t key,int msgid,int sem_petla,int pamiec_kasjer,int se
         sleep(czas);
     }
 
-    for (int i = 0; i < MAX_KLIENCI; i++) {
+    /*for (int i = 0; i < MAX_KLIENCI; i++) {
         wait(NULL);  
-    }
+    }*/
 }
 
 int main() {
@@ -306,11 +342,6 @@ if (key == -1) {
 }
 key_t key_kk = ftok(".", 'C');
 if (key_kk == -1) {
-    perror("Błąd przy generowaniu klucza");
-    exit(1);
-}
-key_t key_petla = ftok(".", 'D');
-if (key_petla == -1) {
     perror("Błąd przy generowaniu klucza");
     exit(1);
 }
@@ -334,11 +365,21 @@ if (msgid == -1) {
     perror("Błąd przy tworzeniu kolejki");
     exit(1);
 }
-int sem_petla = utworz_semafor(key_petla, 1);
+key_t key_kolejka_klienci = ftok(".", 'G');
+    if (key_kolejka_klienci== -1) {
+        perror("Błąd przy generowaniu klucza");
+        exit(1);
+    }
+    int kolejka_klienci = msgget(key_kolejka_klienci, IPC_CREAT | 0600);  
+    if (kolejka_klienci == -1) {
+        perror("Błąd przy tworzeniu kolejki");
+        exit(1);
+    }
+
+
 int semafor_kasjer = utworz_semafor(key_semafor_kasjer, 1);
-ustaw_semafor(sem_petla, 0, 1);
 ustaw_semafor(semafor_kasjer, 0, 1);
 
-generuj_klientow(key,msgid,sem_petla,pamiec_kasjer,semafor_kasjer); 
+generuj_klientow(key,msgid,pamiec_kasjer,semafor_kasjer,kolejka_klienci); 
 return 0;
 }

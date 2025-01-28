@@ -11,6 +11,7 @@ struct komunikat {
     pid_t klient_pid;
 };
 
+
 int main() {
     pid_t pid_fryzjerzy, pid_klienci,pid_debug,pid_kasjer,pid_usun;
 
@@ -30,6 +31,9 @@ int main() {
         perror("Błąd przy tworzeniu procesu fryzjerzy");
         exit(1);
     }
+
+
+
     pid_fryzjerzy = fork();
     if (pid_fryzjerzy == 0) {
         printf("Uruchamiam proces fryzjerzy.c\n");
