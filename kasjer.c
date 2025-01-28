@@ -11,8 +11,24 @@
 #include <sys/wait.h>
 #include <time.h>
 #include "semafor.h"
+volatile int emergency_closeup=20;
+void zakocz_sie(int sig) {
+    if (sig == SIGUSR2) {
+        emergency_closeup=0;
+    printf("Kasjer skonczyl dzialanie\n");
+    exit(0);
+    }
+    else
+    {
+        printf("BLAD Sygnalu:\n");
+    }
+}
 
-
+struct msgbuf {
+    long mtype;  
+    pid_t pid;
+    int id;
+};
 struct shared_memory {
     pid_t pid_klienta;  
     pid_t pid_kasjera;  
@@ -33,6 +49,7 @@ struct msgbuf2 {
 };
 void obudz(int sig) {
     if (sig == SIGUSR1) {
+       //printf("kasjer dostal sygnal");
     }
     else
     {
@@ -71,29 +88,29 @@ void przelicz_reszte(int liczba, int *banknoty)
     }
 }
 
-kasjer(int sem_kasjer,int sem_petla,int pamiec_kasjer)
+kasjer(int sem_kasjer,int pamiec_kasjer)
 {
-    int emergency_closeup=1000000;
-    while(emergency_closeup){while(semctl(sem_petla,0,GETVAL))
-    {
-    obsluz_klienta(sem_kasjer,pamiec_kasjer);
+    signal(SIGUSR1, obudz);
+    signal(SIGUSR2, zakocz_sie);
+    while(emergency_closeup){
+    obsluz_klienta(sem_kasjer,pamiec_kasjer);     
+    emergency_closeup--;
+    }
+};
     
-        }  
-        emergency_closeup--;
-        }
-}
+
 
 
 void obsluz_klienta(int sem_kasjer,int pamiec_kasjer)
 {
     struct shared_memory *shared_mem = (struct shared_memory *)shmat(pamiec_kasjer, NULL, 0);
     shared_mem->pid_kasjera = getpid();
-    signal(SIGUSR1, obudz);
+    printf("kasjer czeka\n");
     pause();//czekaj na klienta
     printf("kasjer sie budzi\n");
     int cena = rand() % 4 + 5;
     cena=cena*10;
-    //printf("\nblokada kasjera\n\n");
+    //printf("\nblokada kasjera   \n\n");
         shared_mem->kwota=cena;
         printf("kasjer podaje kwote do zaplaty: %d\n",cena);
         if(kill(shared_mem->pid_klienta, SIGUSR1)==-1){
@@ -112,11 +129,9 @@ void obsluz_klienta(int sem_kasjer,int pamiec_kasjer)
         };
         pause();
 
-        
-            sb.sem_num = 0;
-            sb.sem_op = 2; 
-            sb.sem_flg = 0;
-            semop(sem_kasjer, &sb, 1);
+        //printf("SEMAFOR MA WARTOSC1 %d\n",semctl(sem_kasjer,0,GETVAL));
+           ustaw_semafor(sem_kasjer,0,2);
+          // printf("SEMAFOR MA WARTOSC2 %d\n",semctl(sem_kasjer,0,GETVAL));
         shared_mem->zaplacone=0;   
         for (int i = 0;i < 3;i++) { 
         shared_mem->reszta[i]=0;         
@@ -130,11 +145,6 @@ void obsluz_klienta(int sem_kasjer,int pamiec_kasjer)
 int main()
 {
     srand(time(NULL));
-    key_t key_petla = ftok(".", 'D');
-    if (key_petla == -1) {
-        perror("Błąd przy generowaniu klucza");
-        exit(1);
-    } 
     key_t key_pamiec_kasjer = ftok(".", 'E');
     if (key_pamiec_kasjer== -1) {
         perror("Błąd przy generowaniu klucza");
@@ -151,12 +161,30 @@ int main()
         perror("Błąd przy generowaniu klucza");
         exit(1);
     }
-    int sem_petla = utworz_semafor(key_petla, 1);
+    key_t key_kolejka_fryzjerzy = ftok(".", 'H');
+    if (key_kolejka_fryzjerzy== -1) {
+        perror("Błąd przy generowaniu klucza");
+        exit(1);
+    }
+    int kolejka_fryzjerzy = msgget(key_kolejka_fryzjerzy, IPC_CREAT | 0600);  
+    if (kolejka_fryzjerzy == -1) {
+        perror("Błąd przy tworzeniu kolejki");
+        exit(1);
+    }
+    struct msgbuf message;
+               message.mtype = 1;  
+                 message.pid = getpid();
+                 message.id=0;
+                 if (msgsnd(kolejka_fryzjerzy, &message, sizeof(struct msgbuf), 0) == -1) 
+                 {
+                     perror("Błąd przy dodawaniu pida do kolejki fryzjerzy");
+                     exit(1);
+                 }
     int sem_kasjer = utworz_semafor(key_semafor_kasjer, 1);
     ustaw_semafor(sem_kasjer, 0, 2);
      struct shared_memory *shared_mem = (struct shared_memory *)shmat(pamiec_kasjer, NULL, 0);
     shared_mem->pid_kasjera = getpid();
     
-    kasjer(sem_kasjer,sem_petla,pamiec_kasjer); 
+    kasjer(sem_kasjer,pamiec_kasjer); 
 return 0;
 }

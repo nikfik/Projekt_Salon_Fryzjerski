@@ -14,8 +14,8 @@
 #include <math.h>
 #include <stdarg.h>
 
-#define MAX_KLIENCI 10      
-#define MAX_POCZEKALNIA 6
+#define MAX_KLIENCI 2
+#define MAX_POCZEKALNIA 2
 struct shared_memory {
     pid_t pid_klienta;  
     pid_t pid_kasjera;  
@@ -37,7 +37,8 @@ struct msgbuf2 {
     int liczba;
 };
 struct sembuf sb;
-
+ volatile int emergency_closeup=10;
+ volatile int semafor_id;
 
 void zapisz(const char *format, ...) {
     FILE *file = fopen("klienci_summary.txt", "a");
@@ -85,6 +86,7 @@ void obsluz_signal2(int sig, siginfo_t *info,void *ucontext) {
 }
 void obudz(int sig) {
     if (sig == SIGUSR1) {
+        zapisz("%d dostal sygnal\n",getpid());
     }
     else
     {
@@ -93,7 +95,8 @@ void obudz(int sig) {
 }
 void zakocz_sie(int sig) {
     if (sig == SIGUSR2) {
-    zapisz("klient skonczyl dzialanie\n");
+        emergency_closeup=0;
+    zapisz("klient %d skonczyl dzialanie\n",getpid());
     exit(0);
     }
     else
@@ -101,18 +104,22 @@ void zakocz_sie(int sig) {
         zapisz("BLAD Sygnalu:\n");
     }
 }
-void zakocz_sie_z_sem(int sig) {
+/*void zakocz_sie_z_sem(int sig) {
     if (sig == SIGUSR2) {
-        sb.sem_op = 1; 
-      //  semop(semafor_kasjer, &sb, 1);
-    zapisz("klient skonczyl dzialanie\n");
+        struct sembuf sb;
+        sb.sem_flg = 0;
+        sb.sem_op = 1;  
+        sb.sem_num = 0;
+        semop(semafor_id, &sb, 1);
+        emergency_closeup=0;
+    zapisz("klient %d skonczyl dzialanie\n",getpid());
     exit(0);
     }
     else
     {
         zapisz("BLAD Sygnalu:\n");
     }
-}
+}*/
 
 void zarabiaj(int* portfel)
 {
@@ -133,7 +140,8 @@ int zajmij_miejsce(int id, int semid)
         sb.sem_op = -1; 
         sb.sem_flg = 0;
         semop(semid, &sb, 1);
-
+        semafor_id=semid;
+       // signal(SIGUSR2, zakocz_sie_z_sem);
         zapisz("klient %d: Zajął miejsce w poczekalni.(%d/%d)\n", id, semctl(semid, 0, GETVAL), MAX_POCZEKALNIA);
         return 1;
     }
@@ -159,7 +167,7 @@ if (msgsnd(msgid, &message, sizeof(struct msgbuf), 0) == -1)
     }
 
       zapisz("klient %d: wyslal swoj pid[%d] do kolejki\n",id,pid);
-    signal(SIGUSR1, SIG_IGN);  
+    //signal(SIGUSR1, SIG_IGN);  
 }
 
 
@@ -176,6 +184,7 @@ void usiadz_na_fotelu(int id)
         exit(1);
     }
     zapisz("klient %d usiadl na fotelu\n",id);
+
 }
 
 
@@ -184,6 +193,7 @@ void zaplac(int id,int *portfel,int pamiec_kasjer,int semafor_kasjer)
 {
     zapisz("klient %d chce zaplacic\n",id);
     signal(SIGUSR1, obudz);
+    pause();  
     pause();
         sb.sem_num = 0;
         sb.sem_op = -1; 
@@ -191,7 +201,7 @@ void zaplac(int id,int *portfel,int pamiec_kasjer,int semafor_kasjer)
         semop(semafor_kasjer, &sb, 1);
         
         struct shared_memory *shared_mem = (struct shared_memory *)shmat(pamiec_kasjer, NULL, 0);
-        if(shared_mem == (void *)-1) {
+        if(shared_mem == -1) {
         perror("Błąd przy przypisaniu pamięci współdzielonej");
         exit(1);
         }
@@ -261,17 +271,23 @@ void opusc_salon(int id, int semid)
 {
     sb.sem_op = 1;  
     semop(semid, &sb, 1);
-
+    signal(SIGUSR2, zakocz_sie);
     zapisz("Klient %d: Opuszcza poczekalnię.(%d/%d)\n", id, semctl(semid, 0, GETVAL), MAX_POCZEKALNIA);
 }
 
 void klient(int id, int semid,int msgid,int pamiec_kasjer,int semafor_kasjer) {
-    signal(SIGUSR2, zakocz_sie);
- int emergency_closeup=10;
+    struct sigaction sa;
+    sa.sa_flags = SA_SIGINFO;
+    sa.sa_sigaction = zakocz_sie; 
+    if (sigaction(SIGUSR2, &sa, NULL) == -1) {
+        perror("Błąd przy ustawianiu obsługi SIGUSR2");
+        exit(1);
+    }
+    zapisz("klient %d stworzony [%d]\n",id,getpid());
+
  int *portfel =(int*) malloc(3*sizeof(int));
     for (int i = 0;i < 3;i++) portfel[i] = 0;
  while(emergency_closeup){
-        
         int temp_money=suma(portfel);
         zapisz("Klient %d: Idzie zarabiać.\n",id);
         zarabiaj(portfel);
@@ -283,9 +299,8 @@ void klient(int id, int semid,int msgid,int pamiec_kasjer,int semafor_kasjer) {
         usiadz_na_fotelu(id);
         temp_money=suma(portfel);
         zaplac(id,portfel,pamiec_kasjer,semafor_kasjer);
-        zapisz("Klient %d: zaplacil .[%d]->[%d]\n",id,temp_money,suma(portfel));
+        zapisz("Klient %d: zaplacil [%d]->[%d]\n",id,temp_money,suma(portfel));
         zostan_ostrzyzonym(id);
-        
         opusc_salon(id, semid);
         
         }
@@ -300,20 +315,16 @@ void generuj_klientow(key_t key,int msgid,int pamiec_kasjer,int semafor_kasjer,i
     ustaw_semafor(semid, 0, MAX_POCZEKALNIA);
     for (int i = 0; i < MAX_KLIENCI; i++) {
         pid_t pid = fork();
-
-        if(pid!=0){
+        if (pid == 0) {
             struct msgbuf message;
                message.mtype = 1;  
                  message.pid = getpid();
                  message.id=i+1;
-                 if (msgsnd(kolejka_klienci, &message, sizeof(struct msgbuf), 0) == -1) 
+            if (msgsnd(kolejka_klienci, &message, sizeof(struct msgbuf), 0) == -1) 
                  {
                      perror("Błąd przy dodawaniu pida do kolejki klienci");
                      exit(1);
                  }
-        }
-
-        if (pid == 0) {
             klient(i + 1, semid,msgid,pamiec_kasjer,semafor_kasjer);
             exit(0);
         }

@@ -23,7 +23,7 @@ struct shared_data {
 };
 void zegar(struct shared_data *shared) {
     shared->tp=8;
-    shared->tk=18;
+    shared->tk=11;
     while (shared->tp < shared->tk) { 
         printf("--------godzina %d:00----------\n",shared->tp);
         sleep(15); 
@@ -37,32 +37,38 @@ void zegar(struct shared_data *shared) {
 
 void kill_fryzjer(pid_t pid) {
     if (kill(pid, SIGUSR2) == -1) {
-        perror("Błąd przy wysyłaniu sygnału do fryzjera");
-        exit(1);
+        usleep(100000);
+        //perror("Błąd przy wysyłaniu sygnału do fryzjera");
+        //exit(1);
     }
-    printf("Wysłano sygnał do fryzjera %d, aby opuścił salon.\n", pid);
+    //printf("Wysłano sygnał do fryzjera %d, aby opuścił salon.\n", pid);
 }
 
 void kill_klient(pid_t pid) {
+    //printf("proba zabicia klienta %d\n",pid);
     if (kill(pid, SIGUSR2) == -1) {
-        perror("Błąd przy wysyłaniu sygnału do klienta");
-        exit(1);
+        usleep(100000);
+        //perror("Błąd przy wysyłaniu sygnału do klienta");
+        //exit(1);
     }
-    printf("Wysłano sygnał do klienta %d, aby opuścił salon.\n", pid);
+    //printf("Wysłano sygnał do klienta %d, aby opuścił salon.\n", pid);
 }
 
 void kill_all(int kolejka_klienci, int kolejka_fryzjerzy) {
     struct msgbuf message;
     pid_t klient_pid, fryzjer_pid;
 
-    while (msgrcv(kolejka_klienci, &message, sizeof(struct msgbuf), 0, IPC_NOWAIT) != -1) {
-        klient_pid = message.pid;
-        kill_klient(klient_pid);
-    }
-    while (msgrcv(kolejka_fryzjerzy, &message, sizeof(struct msgbuf), 0, IPC_NOWAIT) != -1) {
-        fryzjer_pid = message.pid;
-        kill_fryzjer(fryzjer_pid);
-    }
+   while (msgrcv(kolejka_klienci, &message, sizeof(struct msgbuf), 0, IPC_NOWAIT) != -1) {
+    klient_pid = message.pid;
+    printf("konczymy klienta %d\n",klient_pid);
+    kill_klient(klient_pid);
+}
+while (msgrcv(kolejka_fryzjerzy, &message, sizeof(struct msgbuf), 0, IPC_NOWAIT) != -1) {
+    fryzjer_pid = message.pid;
+    printf("konczymy fryzjera %d\n",fryzjer_pid);
+    kill_fryzjer(fryzjer_pid);
+}
+
 
     printf("Wszystkie procesy klientów i fryzjerów zostały zakończone.\n");
 }
@@ -111,7 +117,7 @@ int main()
     pid_t pid_zegar = fork();
     if (pid_zegar == 0) {
         zegar(shared);
-        kill_all(kolejka_klienci,kolejka_fryzjerzy);
+        kill_all(kolejka_fryzjerzy,kolejka_klienci);
         cleanup();
         shmdt(shared);
     } 
@@ -122,7 +128,7 @@ int main()
         exit(1);
          }
     int wybor=2;
-    while(wybor)
+    while(wybor&&shared->tp < shared->tk)
     {
         scanf("%d",&wybor);
         printf("wybrano :%d\n",wybor);

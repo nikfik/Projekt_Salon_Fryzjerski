@@ -52,9 +52,14 @@ void cleanup()
         perror("Błąd przy generowaniu klucza");
         exit(1);
     }
-    key_t key_petla = ftok(".", 'D');
-    if (key_petla == -1) {
+    key_t key_zegar = ftok(".", 'D');
+    if (key_zegar == -1) {
         perror("Błąd przy generowaniu klucza");
+        exit(1);
+    }
+    int shm_id = shmget(key_zegar,0, IPC_CREAT | 0600);
+    if (shm_id == -1) {
+        perror("Błąd przy tworzeniu pamięci dzielonej");
         exit(1);
     }
     int msgid = msgget(key_kk, IPC_CREAT | 0600);  
@@ -99,15 +104,15 @@ void cleanup()
     }
     int semidA = utworz_semafor(keyA, 1);
     int semidB = utworz_semafor(keyB, 1);
-    int semidD = utworz_semafor(key_petla, 1);
     int semidF = utworz_semafor(key_semafor_kasjer, 1);
     shmctl(pamiec_kasjer, IPC_RMID, NULL);//pamiec kasjer
     msgctl(msgid, IPC_RMID, NULL);//kolejka komunikatow
-    msgctl(kolejka_fryzjerzy, IPC_RMID, NULL);//kolejka fryzjerow
+    msgctl(shm_id, IPC_RMID, NULL);//pamiec zegar
+    msgctl(kolejka_fryzjerzy, IPC_RMID, NULL);
     msgctl(kolejka_klienci, IPC_RMID, NULL);//kolejka klientow
     semctl(semidA, 0, IPC_RMID);//semafor foteli
     semctl(semidB, 0, IPC_RMID);//semafor poczekalni
-    semctl(semidD, 0, IPC_RMID);//semafor petli
+    //semctl(semidD, 0, IPC_RMID);//semafor petli
     semctl(semidF, 0, IPC_RMID);//semafor kasjer
     printf("Wszystko posprzatane.\n");
 }

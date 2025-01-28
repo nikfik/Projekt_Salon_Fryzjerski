@@ -12,8 +12,8 @@
 #include <time.h>
 #include "semafor.h"
 #include <stdarg.h>
-#define MAX_FRYZJER 5    
-#define MAX_FOTEL 3
+#define MAX_FRYZJER 4    
+#define MAX_FOTEL 2
 
 void zapisz(const char *format, ...) {
     FILE *file = fopen("fryzjer_summary.txt", "a");
@@ -60,7 +60,7 @@ void zakocz_sie(int sig) {
 }
 void obsluz_signal_odblokuj(int sig) {
     if (sig == SIGUSR1) {
-        sleep(1);
+        //sleep(1);
     }
     else
     {
@@ -105,7 +105,7 @@ void czekaj_na_klienta(int id,int semafor_kasjer,pid_t mpid,int pamiec_kasjer)
     sb.sem_flg = 0;
     zapisz("fryzjer %d: czeka az klient zaplaci\n",id);
     signal(SIGUSR1, obsluz_signal_odblokuj);
-    while(semctl(semafor_kasjer,0,GETVAL)!=2){}
+    while(semctl(semafor_kasjer,0,GETVAL)!=2){printf("",semctl(semafor_kasjer,0,GETVAL));}
     semop(semafor_kasjer, &sb, 1); 
     zapisz("fryzjer %d: wysyła sygnał do klienta\n",id);
     if (kill(mpid, SIGUSR1) == -1) 
@@ -121,15 +121,15 @@ void ostrzyz(int semid,int id,int pid_klienta)
     zapisz("fryzjer %d strzyze...\n",id);
     sleep(5);
     signal(SIGUSR1, obsluz_signal_odblokuj);
+    zapisz("fryzjer %d ostrzygl\n",id);
     union sigval value;
     value.sival_int = getpid();
-    zapisz("proba wyslania sygnalu do%d\n",pid_klienta);
+    //zapisz("proba wyslania sygnalu do%d\n",pid_klienta);
       if (sigqueue(pid_klienta, SIGUSR1, value) == -1) {
         perror("Błąd przy wysyłaniu sygnału");
         exit(1);
     }
     pause();
-    zapisz("fryzjer %d ostrzygl\n",id);
     sb.sem_op = 1;
     semop(semid, &sb, 1);
     //printf("semafor fotela1=%d",semctl(semid,0,GETVAL));
@@ -149,23 +149,20 @@ void idz_na_przerwe_chyba(int id)
 
 
 
-void fryzjer(int id, int msmid,key_t key_kk,int semid,int semafor_kasjer,int pamiec_kasjer) {
+void fryzjer(int id, int msgid,int semid,int semafor_kasjer,int pamiec_kasjer) {
     signal(SIGUSR2, zakocz_sie);
     int emergency_closeup=20;
 
     zapisz("fryzjer %d: w gotowości[%d].\n", id,getpid());
 
     struct msgbuf message;
-    int msgid = msgget(key_kk, 0600);  
-    if (msgid == -1) {
-        perror("Błąd przy uzyskiwaniu dostępu do kolejki");
-        exit(1);
-    }
-    while(emergency_closeup)
+    while(emergency_closeup>=0)
     {
     if(msgrcv(msgid, &message, sizeof(struct msgbuf), 0, 0) == -1)
     {
-        perror("Błąd przy odbieraniu wiadomości");
+        //printf("fryzjer %d: blad :%d,%d,%d\n",id,message.id,message.mtype,message.pid);
+       // perror("Błąd przy odbieraniu wiadomości");
+       sleep(1);
         exit(1);
     }
     else
@@ -184,13 +181,12 @@ void fryzjer(int id, int msmid,key_t key_kk,int semid,int semafor_kasjer,int pam
 }
 
 
-void generuj_fryzjerow(key_t key, int msgid,key_t key_kk,int semafor_kasjer,int pamiec_kasjer,int kolejka_fryzjerzy) {
+void generuj_fryzjerow(key_t key, int msgid,int semafor_kasjer,int pamiec_kasjer,int kolejka_fryzjerzy) {
     int semid = utworz_semafor(key, 1); 
     ustaw_semafor(semid, 0, MAX_FOTEL);  
     for (int i = 0; i < MAX_FRYZJER; i++) {
         pid_t pid = fork();  
-
-        if(pid!=0){
+        if (pid == 0) {  
             struct msgbuf message;
                message.mtype = 1;  
                  message.pid = getpid();
@@ -200,10 +196,7 @@ void generuj_fryzjerow(key_t key, int msgid,key_t key_kk,int semafor_kasjer,int 
                      perror("Błąd przy dodawaniu pida do kolejki fryzjerzy");
                      exit(1);
                  }
-        }
-
-        if (pid == 0) {  
-            fryzjer(i + 1, msgid,key_kk,semid,semafor_kasjer,pamiec_kasjer);
+            fryzjer(i + 1, msgid,semid,semafor_kasjer,pamiec_kasjer);
             exit(0);  
         } else if (pid < 0) {
             perror("Błąd przy tworzeniu procesu fryzjera");
@@ -262,7 +255,7 @@ int pamiec_kasjer = shmget(key_pamiec_kasjer, SHM_SIZE, IPC_CREAT | 0600);
     }
 
     int sem_kasjer = utworz_semafor(key_semafor_kasjer, 1);
-    generuj_fryzjerow(key,msgid,key_kk,sem_kasjer,pamiec_kasjer,kolejka_fryzjerzy);
+    generuj_fryzjerow(key,msgid,sem_kasjer,pamiec_kasjer,kolejka_fryzjerzy);
 
     return 0;
 }

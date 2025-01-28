@@ -17,7 +17,7 @@ int main() {
 
     pid_usun = fork();
     if (pid_usun == 0) {
-        execlp("rm klienci_summary.txt", "rm klienci_summary.txt", (char *)NULL); 
+        execlp("rm","rm","klienci_summary.txt", (char *)NULL); 
         exit(1);
     } else if (pid_usun < 0) {
         perror("Błąd przy tworzeniu procesu fryzjerzy");
@@ -25,7 +25,7 @@ int main() {
     }
     pid_usun = fork();
     if (pid_usun == 0) {
-        execlp("rm fryzjer_summary.txt", "rm fryzjer_summary.txt", (char *)NULL);
+        execlp("rm","rm", "fryzjer_summary.txt", (char *)NULL);
         exit(1);
     } else if (pid_usun < 0) {
         perror("Błąd przy tworzeniu procesu fryzjerzy");
