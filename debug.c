@@ -11,9 +11,15 @@
 #include <sys/wait.h>
 #include <time.h>
 #include "semafor.h"
+struct sembuf sb;
 int main()
 {
-    printf("menu lol");
+    key_t key_petla = ftok(".", 'D');
+    if (key_petla == -1) {
+        perror("Błąd przy generowaniu klucza");
+        exit(1);
+    }
+    int sem_petla = utworz_semafor(key_petla, 1);
     int wybor=2;
     while(wybor)
     {
@@ -24,6 +30,20 @@ int main()
             case 1:
             {
                 cleanup();
+                break;
+            }
+            case 2:
+            {
+                sb.sem_op = -1;  
+                semop(sem_petla, &sb, 1);
+                printf("\nopuszczam semafor \n");
+                break;
+            }
+            case 3:
+            {
+                sb.sem_op = 1;  
+                semop(sem_petla, &sb, 1);
+                printf("\npodnosze semafor \n");
                 break;
             }
         }

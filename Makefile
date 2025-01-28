@@ -1,4 +1,6 @@
-all: fryzjerzy klienci debug salon_fryzjerski
+all: fryzjerzy klienci debug salon_fryzjerski kasjer
+kasjer: kasjer.c
+	 gcc kasjer.c semafor.c -o kasjer -I.
 fryzjerzy: fryzjerzy.c 
 	 gcc fryzjerzy.c semafor.c -o fryzjerzy -I.
 klienci: klienci.c 

@@ -12,7 +12,7 @@ struct komunikat {
 };
 
 int main() {
-    pid_t pid_fryzjerzy, pid_klienci,pid_debug;
+    pid_t pid_fryzjerzy, pid_klienci,pid_debug,pid_kasjer;
 
     pid_fryzjerzy = fork();
     if (pid_fryzjerzy == 0) {
@@ -44,10 +44,20 @@ int main() {
         perror("Błąd przy tworzeniu procesu debug");
         exit(1);
     }
+    pid_kasjer = fork();
+    if (pid_kasjer == 0) {
+        printf("Uruchamiam proces kasjer.c\n");
+        execlp("./kasjer", "./kasjer", (char *)NULL);  
+        perror("Błąd przy uruchamianiu kasjer.c");
+        exit(1);
+    } else if (pid_kasjer < 0) {
+        perror("Błąd przy tworzeniu procesu kasjer");
+        exit(1);
+    }
     waitpid(pid_fryzjerzy, NULL, 0);
     waitpid(pid_klienci, NULL, 0);
     waitpid(pid_debug, NULL, 0);
-
+    waitpid(pid_kasjer, NULL, 0);
   
 
     printf("Wszystkie procesy zostały zakończone.\n");
